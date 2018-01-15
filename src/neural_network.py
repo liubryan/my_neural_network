@@ -7,12 +7,19 @@ biases, zs, activations, deltas, *nablas - Layers 2,3,...,L (size = L-1)"""
 import numpy as np
 import random
 import math
-import cPickle, gzip, numpy
+import cPickle, gzip
 
 # Load the dataset
 f = gzip.open('mnist.pkl.gz', 'rb')
 train_set, valid_set, test_set = cPickle.load(f)
 f.close()
+
+print "train_set has {} images\n valid_set has {} images\n test_set has {} images\n\n".format(
+		len(train_set), len(valid_set), len(test_set))
+
+
+
+
 
 
 class Network(object):
@@ -22,23 +29,28 @@ class Network(object):
 		self.num_layers = len(size)
 		self.biases = [np.random.randn(y,1) for y in size[1:]]
 		self.weights = [np.random.randn(y,x) / sqrt(x)
-						for x,y in zip(size[:-1], size[1:])
+						for x,y in zip(size[:-1], size[1:])]
 
 
-	def testing(self, train_data, batch_size, epochs):
-		for i in xrange(epochs):
-			training(train_data, batch_size)
+	def working(self, test_set):
+		num_correct = 0
+		for data in test_set:
+			out_as = forward_pass(data, 0, get_out_as=True)
+			choice = np.argmax(out_as)
+			if(choice == data[1]):
+				num_correct += 1
+		print "{}/{} correctly classified by network\n".format(
+				num_correct, len(test_set))
 
 
-	def working(self, datapair):
-		data_in, expected = datapair
-		activations = [np.zeros(shape(a)) for a in self.biases]
+"""
+	#Automates choosing eta and batch size
+	def picking_hyper(self, valid_set):
+"""
 
 
-
-	def training(self, train_set, batch_size, eta, epochs, 
-				show_cost=False,
-				show_accuracy=True):
+	def training(self, train_set, test_set, batch_size, eta, epochs, 
+				show_progress=False, show_end_accuracy=False):
 		for i in xrange(epochs):		
 			random.shuffle(train_set)
 			#list of lists of training data
@@ -50,35 +62,35 @@ class Network(object):
 			for batch in batches:
 				nabla_w = [np.zeros(np.shape(a)) for a in self.biases]
 				nabla_b = [np.zeros(np.shape(a)) for a in self.biases]
-				gradient_descent(batch, expected, deltas, nabla_w, nabla_b, eta, i)
-
+				gradient_descent(batch, deltas, nabla_w, nabla_b, eta)
+			if show_progress:
+				print "Epoch {} Training Complete: ".format(i)
+				working(test_set)
+			if show_end_accuracy and i == (epochs-1):
+				print "Finished Network: "
+				working(test_set)
 
 
 	#One image
-	def gradient_descent(self, batch, expected, delta, nabla_w, 
-						nabla_b, eta, epoch_num, show_cost=False, show_accuracy=True):
+	def gradient_descent(self, batch, delta, nabla_w, nabla_b, eta):
 		"""Go through all images in the batch, updating nabla_w and nabla_b 
 		each iteration by adding"""
 		for single in batch:
 			activations, activations_prime, cost, cost_prime = forward_pass(single)
-			backprop(delta, activations_prime, cost_prime, nabla_w, nabla_b)
-			"""
-			if show_cost:
-				print "Epoch {}: Cost is {}".format(epoch_num, cost)
-			if show_accuracy:
-				print "Epoch {}: {}/50000 classified correctly".format(
-					epoch_num, num_correct)
-			"""
+			backprop(delta, activations, activations_prime, cost_prime, 
+					nabla_w, nabla_b)
 		self.weights = [self.weights[i] - (eta/size(batch))*nabla_w[i]
 						for i in xrange(self.num_layers-1)]
 		self.biases = [self.biases[i] - (eta/size(batch))*nabla_b[i]
 						for i in xrange(self.num_layers-1)]
 
 
-
-	def forward_pass(self, datapair):
-		#data_in must be an vertical array
+	def forward_pass(self, datapair, get_out_as=False):
+		#data_in must be an vertical array. Expected converted to array of 
+		#output activations
 		data_in, expected = data
+		expected_as = np.shape(self.biases[-1])
+		expected_as[expected] = 1.0
 		#Initialize zs and activations list of arrays from layer = 2 to end
 		zs = [np.zeros(np.shape(a)) for a in self.biases]
 		activations = zs
@@ -89,11 +101,17 @@ class Network(object):
 			else:
 				zs[i] = np.dot(self.weights[i], data_in) + self.biases[i]
 			activations[i], activations_prime[i] = squishify(zs[i])
-		cost, cost_prime = cross_entropy_cost(activation[-1], expected)
-		return activations, activations_prime, cost, cost_prime
+		cost, cost_prime = cross_entropy_cost(activation[-1], expected_as)
+		if np.argmax(activations[-1]) == expected:
+			num_correct += 1
+		if get_out_as:
+			return activations[-1]
+		else:
+			return activations, activations_prime, cost, cost_prime
 
 
-	def backprop(self, deltas, activations_prime, cost_prime, nabla_w, nabla_b):
+	def backprop(self, deltas, activations, activations_prime, cost_prime, 
+				nabla_w, nabla_b):
 		deltas[-1] = cost_prime * activations_prime[-1]
 		nabla_w += np.dot(delta[-1], activations[-2].transpose())
 		nabla_b[-1] += delta[-1]
@@ -104,11 +122,6 @@ class Network(object):
 						* activations_prime[i+1]
 			nabla_w[i] += np.dot(deltas[i], activations[i].transpose())
 			nabla_b[i] += deltas[i]	
-
-
-	@staticmethod
-	def z_xl(weights, biases, a_prev):
-		return np.dot(weights, a_prev) + biases
 
 
 	"""softmax for all zs in a layer for one run"""
