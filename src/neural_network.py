@@ -1,8 +1,18 @@
 """basic neural network"""
+"""USAGE: this neural network is designed to take in the MNIST gzip pickled
+dataset of handwritten numbers from 0 to 9. To run, download this file and the
+MNIST dataset at http://deeplearning.net/tutorial/gettingstarted.html. Edit the
+gzip.open line below to where the dataset is located for you. At the command
+line, type 
+    "import neural_network as n"
+    "train, valid, test = n.init_data()"
+    "net = n.Network([784, 30, 10])"
+    "net.training(train, test, 10, 3.0, 20, True)"
+At this point, the network should be training. You can play around with the 
+number of hidden neurons, hidden layers, eta, and batch size if you want.
+"""
 
 
-"""activations list - Layers 1,2,...,L (size = L) 
-biases, zs, activations, deltas, *nablas - Layers 2,3,...,L (size = L-1)"""
 
 import numpy as np
 import random
@@ -10,10 +20,13 @@ import math
 import cPickle, gzip
 
 
-"""Initialize data from MNIST gzip pickled number dataset. Converts split
-data into a list of pairs (x,y) where x is the pixel input of the number, 
-y is the integer label for that image"""
+
+"""Initialize data from MNIST dataset. Separates training,
+validating, and testing set. Data from each is processed into a list of pairs 
+(x,y) where x is the pixel input of the number, y is an array corresponding to 
+the expected output activations of the network"""
 def init_data():
+    #Specify where the dataset is located on your computer
     f = gzip.open('../data/mnist.pkl.gz', 'rb')
     raw_train, raw_valid, raw_test = cPickle.load(f)
     f.close()
@@ -39,13 +52,15 @@ def format_data(data):
 
 
 
-
-
 """REQUIRED: Number of input layer neurons must be the same as the number
-of pixels of the dataset image. Number of output neurons must be 10 to
-represent all numbers 0 to 9"""
+of pixels of the dataset image. Number of output neurons correspond to 
+the total number of different outputs"""
 class Network(object):
 
+
+    #Weights and biases are a list of arrays, where each array represents
+    #its corresponding neuron layer from L = 2 to N (layer 1 does not
+    #have weights or biases)
     def __init__(self, size):
         self.size = size
         self.num_layers = len(size)
@@ -54,6 +69,8 @@ class Network(object):
                         for x,y in zip(size[:-1], size[1:])]
 
 
+
+    #Tests neural net's accuracy on new data after each epoch of training
     def working(self, test_set):
         num_correct = 0
         for data in test_set:
@@ -65,19 +82,19 @@ class Network(object):
         print "{}/{} correctly classified by network\n".format(
             num_correct, len(test_set))
 
+ 
 
-    #Automates choosing eta and batch size
-    #def picking_hyper(self, valid_set): 
-
+    #Trains the neural net using backprop. At the end of each epoch 
+    #the test data is used to evaluate the network's accuracy
     def training(self, train_set, test_set, batch_size, eta, epochs, 
                 show_progress=False, show_end_accuracy=False):
-        for i in xrange(epochs):        
+        for i in xrange(epochs):     
             random.shuffle(train_set)
-            #list of lists of training data
+            #Separates the dataset into batch sizes specified by the user
             batches = [train_set[k:batch_size+k] 
                     for k in xrange(0,len(train_set),batch_size)]
-            #nabla_w and nabla_b must be reset to 0's at the end of each batch
             for batch in batches:
+                #nabla_w and nabla_b are reset before each batch 
                 nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
                 nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
                 self.gradient_descent(batch, eta, nabla_w, nabla_b)
@@ -89,10 +106,11 @@ class Network(object):
                 self.working(test_set)
 
 
-    #One image
+
+    #Determines the weight and bias errors after each backprop iteration of 
+    #a batch. At the end of a batch, the errors are averaged and used to 
+    #calculate the new weights and biases
     def gradient_descent(self, batch, eta, nabla_w, nabla_b):
-        #Go through all images in the batch, summing nabla_w and nabla_b 
-        #each iteration
         for single in batch:
             a_s = self.forward_pass(single)
             delta = self.cost_prime(a_s[-1], single[1]) * self.activation_prime(a_s[-1])
@@ -103,6 +121,7 @@ class Network(object):
 
 
 
+    #Calculates and returns the activations of all the neurons
     def forward_pass(self, datapair, get_out_as=False):
         activations = []
         activations.append(datapair[0])
@@ -114,6 +133,9 @@ class Network(object):
         return activations
 
 
+
+    #Backpropagates the error from the last layer to calculate and update nabla_w and
+    #nabla_b for layers 2 to N
     def backprop(self, delta, a_s, nabla_w, nabla_b):
         nabla_w[-1] += np.dot(delta, np.transpose(a_s[-2]))
         nabla_b[-1] += delta
@@ -125,24 +147,26 @@ class Network(object):
 
 
 
+    #Activation function
     @staticmethod
     def squishify(zs):
         return 1.0 / (1.0 + np.exp(-zs))
 
 
+    #Activation derivative
     @staticmethod
     def activation_prime(activations):
         return activations * (1.0 - activations)
 
 
-    #Cross-Entropy Cost Function for one run expected value 
-    #from data MUST BE ARRAY
+    #Cost function
     @staticmethod
     def cost(out_a, expected):
         cost_array = 0.5*(out_a-expected)*(out_a-expected)
         return np.sum(cost_array)
 
 
+    #Cost derivative
     @staticmethod
     def cost_prime(out_a, expected):
         return out_a - expected
