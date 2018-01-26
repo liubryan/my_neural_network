@@ -3,13 +3,14 @@
 dataset of handwritten numbers from 0 to 9. To run, download this file and the
 MNIST dataset at http://deeplearning.net/tutorial/gettingstarted.html. Edit the
 gzip.open line below to where the dataset is located for you. At the command
-line, type 
+line in Python, type 
     "import neural_network as n"
     "train, valid, test = n.init_data()"
     "net = n.Network([784, 30, 10])"
     "net.training(train, test, 10, 3.0, 20, True)"
 At this point, the network should be training. You can play around with the 
-number of hidden neurons, hidden layers, eta, and batch size if you want.
+number of hidden neurons, hidden layers, eta, batch size, and number of training
+epochs if you want.
 """
 
 
