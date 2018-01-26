@@ -57,9 +57,9 @@ class Network(object):
     def working(self, test_set):
         num_correct = 0
         for data in test_set:
-            _,expected = data
             out_as = self.forward_pass(data, True)
             choice = np.argmax(out_as)
+            expected = np.argmax(data[1])
             if choice == expected:
                 num_correct += 1
         print "{}/{} correctly classified by network\n".format(
@@ -76,15 +76,11 @@ class Network(object):
             #list of lists of training data
             batches = [train_set[k:batch_size+k] 
                     for k in xrange(0,len(train_set),batch_size)]
-            #Since deltas are overwritten at each new image, I just initialized
-            #the deltas for the entire train_set to avoid uneccesary re-inits. 
             #nabla_w and nabla_b must be reset to 0's at the end of each batch
-            #deltas = [np.zeros(np.shape(a)) for a in self.biases]
             for batch in batches:
-                deltas = [np.zeros(np.shape(a)) for a in self.biases]
-                nabla_w = [np.zeros(np.shape(a)) for a in self.weights]
-                nabla_b = [np.zeros(np.shape(a)) for a in self.biases]
-                self.gradient_descent(batch, deltas, nabla_w, nabla_b, eta)
+                nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
+                nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
+                self.gradient_descent(batch, eta, nabla_w, nabla_b)
             if show_progress:
                 print "Epoch {} Training Complete: ".format(i)
                 self.working(test_set)
@@ -94,64 +90,59 @@ class Network(object):
 
 
     #One image
-    def gradient_descent(self, batch, delta, nabla_w, nabla_b, eta):
-        #Go through all images in the batch, updating nabla_w and nabla_b 
-        #each iteration by adding
+    def gradient_descent(self, batch, eta, nabla_w, nabla_b):
+        #Go through all images in the batch, summing nabla_w and nabla_b 
+        #each iteration
         for single in batch:
-            activations, activations_prime, cost, cost_prime = self.forward_pass(single)
-            self.backprop(delta, activations, activations_prime, cost_prime, 
-                    nabla_w, nabla_b, single[0])
+            a_s = self.forward_pass(single)
+            delta = self.cost_prime(a_s[-1], single[1]) * self.activation_prime(a_s[-1])
+            nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)
         for i in xrange(self.num_layers-1):
             self.weights[i] -= (eta/len(batch))*nabla_w[i]
             self.biases[i] -= (eta/len(batch))*nabla_b[i]
 
 
+
     def forward_pass(self, datapair, get_out_as=False):
-        #Initialize zs and activations list of arrays from layer = 2 to end
-        zs = [np.zeros(np.shape(a)) for a in self.biases]
-        activations = zs
-        activations_prime = zs
-        for i in xrange(self.num_layers - 1):
-            if i != 0:
-                zs[i] = np.dot(self.weights[i], activations[i-1]) + self.biases[i]
-            else:
-                zs[i] = np.dot(self.weights[i], data_in) + self.biases[i]
-            activations[i], activations_prime[i] = self.squishify(zs[i])
+        activations = []
+        activations.append(datapair[0])
+        for w,b in zip(self.weights, self.biases):
+            z = np.dot(w, activations[-1]) + b
+            activations.append(self.squishify(z))
         if get_out_as:
             return activations[-1]
-        cost, cost_prime = self.cost_func(activations[-1], datapair[1])
-        return activations, activations_prime, cost, cost_prime
+        return activations
 
 
-    def backprop(self, deltas, activations, activations_prime, cost_prime, 
-        nabla_w, nabla_b, data_in):
-        deltas[-1] = cost_prime * activations_prime[-1]
-        nabla_w[-1] += np.dot(deltas[-1], np.transpose(activations[-2]))
-        nabla_b[-1] += deltas[-1]
-        #Iterate from layers L-1 to 2. For some layer, 
-        #activations[i+1], weights[i], deltas[i]                
-        for i in reversed(xrange(len(deltas)-1)):
-            deltas[i] = np.dot(np.transpose(self.weights[i+1]), deltas[i+1]) * \
-                activations_prime[i]
-            if i != 0:
-                nabla_w[i] += np.dot(deltas[i], np.transpose(activations[i-1]))
-            else:
-                nabla_w[i] += np.dot(deltas[i], np.transpose(data_in))
-            nabla_b[i] += deltas[i] 
+    def backprop(self, delta, a_s, nabla_w, nabla_b):
+        nabla_w[-1] += np.dot(delta, np.transpose(a_s[-2]))
+        nabla_b[-1] += delta
+        for i in xrange(self.num_layers-2, 0, -1):
+            delta = np.dot(np.transpose(self.weights[i]), delta) * self.activation_prime(a_s[i])
+            nabla_w[i-1] += np.dot(delta, np.transpose(a_s[i-1]))
+            nabla_b[i-1] += delta
+        return nabla_w, nabla_b
+
 
 
     @staticmethod
     def squishify(zs):
-        sigmoid = 1.0 / (1.0 + np.exp(-zs))
-        sigmoid_prime = sigmoid * (1.0 - sigmoid)
-        return sigmoid, sigmoid_prime
+        return 1.0 / (1.0 + np.exp(-zs))
+
+
+    @staticmethod
+    def activation_prime(activations):
+        return activations * (1.0 - activations)
 
 
     #Cross-Entropy Cost Function for one run expected value 
     #from data MUST BE ARRAY
     @staticmethod
-    def cost_func(out_a, expected):
+    def cost(out_a, expected):
         cost_array = 0.5*(out_a-expected)*(out_a-expected)
-        cost = np.sum(cost_array)
-        cost_prime = out_a - expected
-        return cost, cost_prime
+        return np.sum(cost_array)
+
+
+    @staticmethod
+    def cost_prime(out_a, expected):
+        return out_a - expected
