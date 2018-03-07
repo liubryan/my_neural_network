@@ -18,6 +18,8 @@ epochs if you want.
 import numpy as np
 import random
 import math
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import cPickle, gzip
 
 
@@ -41,7 +43,9 @@ def init_data():
     return train_set, valid_set, test_set
 
 
-
+"""Converts MNIST dataset from a pair of list of images and output labels
+into a list of pairs of images and their respective labels converted
+into their equivalent representation as output layer neurons"""
 def format_data(data):
     pixel_in = [np.reshape(x, (784,1)) for x in data[0]]
     expected = []
@@ -51,6 +55,21 @@ def format_data(data):
         expected.append(arr)
     return zip(pixel_in, expected)
 
+
+"""
+np.random.seed(5678923)
+fig, ax = ax.plot(np.random.rand(190))
+line, = ax.plot(np.random.rand(10))
+ax.set_ylim(0,1)
+
+def update(data):
+    line.set_ydata(data)
+    return line,
+
+def data_gen():
+    while True:
+        yield np.random.rand(10)
+"""
 
 
 """REQUIRED: Number of input layer neurons must be the same as the number
@@ -66,16 +85,19 @@ class Network(object):
         self.size = size
         self.num_layers = len(size)
         self.biases = [np.random.randn(y,1) for y in size[1:]]
-        self.weights = [np.random.randn(y,x) #/ np.sqrt(x)
+        self.weights = [np.random.randn(y,x) / np.sqrt(x)
                         for x,y in zip(size[:-1], size[1:])]
 
 
 
     #Tests neural net's accuracy on new data after each epoch of training
-    def working(self, test_set):
+    def working(self, test_set, func_type):
         num_correct = 0
         for data in test_set:
-            out_as = self.forward_pass(data, True)
+            if (func_type == "squared"):
+                out_as = self.forward_pass(data, "sigmoid", True)
+            else:
+                out_as = self.forward_pass(data, "softmax", True)
             choice = np.argmax(out_as)
             expected = np.argmax(data[1])
             if choice == expected:
@@ -83,12 +105,17 @@ class Network(object):
         print "{}/{} correctly classified by network\n".format(
             num_correct, len(test_set))
 
+
+
  
 
     #Trains the neural net using backprop. At the end of each epoch 
     #the test data is used to evaluate the network's accuracy
     def training(self, train_set, test_set, batch_size, eta, epochs, 
-                show_progress=False, show_end_accuracy=False):
+                cost_activation_type, show_progress=True):
+        if (cost_activation_type != "squared" and cost_activation_type != "cross"):
+            print("enter valid cost_activation_type 'squared' or 'cross'")
+            exit(1)
         for i in xrange(epochs):     
             random.shuffle(train_set)
             #Separates the dataset into batch sizes specified by the user
@@ -98,37 +125,42 @@ class Network(object):
                 #nabla_w and nabla_b are reset before each batch 
                 nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
                 nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
-                self.gradient_descent(batch, eta, nabla_w, nabla_b)
+                self.gradient_descent(batch, eta, nabla_w, nabla_b, cost_activation_type)
             if show_progress:
                 print "Epoch {} Training Complete: ".format(i)
-                self.working(test_set)
-            if show_end_accuracy and i == (epochs-1):
-                print "Finished Network: "
-                self.working(test_set)
-
+                self.working(test_set, cost_activation_type)
 
 
     #Determines the weight and bias errors after each backprop iteration of 
     #a batch. At the end of a batch, the errors are averaged and used to 
-    #calculate the new weights and biases
-    def gradient_descent(self, batch, eta, nabla_w, nabla_b):
-        for single in batch:
-            a_s = self.forward_pass(single)
-            delta = self.cost_prime(a_s[-1], single[1]) * self.activation_prime(a_s[-1])
-            nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)
+    #calculate the new weights and biases. Uses cross-entropy cost function
+    def gradient_descent(self, batch, eta, nabla_w, nabla_b, func_types):
+        if func_types == "squared":
+            for single in batch:
+                a_s = self.forward_pass(single, "sigmoid")
+                delta = self.cost_prime(a_s[-1], single[1], "squared") * \
+                    self.activation_prime(a_s[-1], "sigmoid")
+                nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)
+        else:
+            for single in batch:
+                a_s = self.forward_pass(single, "softmax")
+                #delta = self.cost_prime(a_s[-1], single[1], "cross") * \
+                    #self.activation_prime(a_s[-1], "softmax")
+                delta = a_s[-1] - single[1]
+                nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)            
         for i in xrange(self.num_layers-1):
             self.weights[i] -= (eta/len(batch))*nabla_w[i]
             self.biases[i] -= (eta/len(batch))*nabla_b[i]
 
 
-
+#TODO MAKE ONLY OUTPUT ACTIVATION BE SOFTMAX
     #Calculates and returns the activations of all the neurons
-    def forward_pass(self, datapair, get_out_as=False):
+    def forward_pass(self, datapair, func_type, get_out_as=False):
         activations = []
         activations.append(datapair[0])
         for w,b in zip(self.weights, self.biases):
             z = np.dot(w, activations[-1]) + b
-            activations.append(self.squishify(z))
+            activations.append(self.squishify(z, func_type))
         if get_out_as:
             return activations[-1]
         return activations
@@ -141,33 +173,78 @@ class Network(object):
         nabla_w[-1] += np.dot(delta, np.transpose(a_s[-2]))
         nabla_b[-1] += delta
         for i in xrange(self.num_layers-2, 0, -1):
-            delta = np.dot(np.transpose(self.weights[i]), delta) * self.activation_prime(a_s[i])
+            delta = np.dot(np.transpose(self.weights[i]), delta) * self.activation_prime(a_s[i], "sigmoid")
             nabla_w[i-1] += np.dot(delta, np.transpose(a_s[i-1]))
             nabla_b[i-1] += delta
         return nabla_w, nabla_b
 
 
 
-    #Activation function
+    #Activation function, takes in zs of a layer
     @staticmethod
-    def squishify(zs):
-        return 1.0 / (1.0 + np.exp(-zs))
+    def squishify(zs, choice):
+        if (choice == "sigmoid"):
+            return 1.0 / (1.0 + np.exp(-zs))
+        elif (choice == "softmax"):
+            #normalizes softmax so overflow does not occur
+            normalize = np.max(zs)
+            exps = np.exp(zs - normalize)
+            return exps / np.sum(exps)
+        else:
+            print("incorrect squishify choice. Choices are 'sigmoid' and 'softmax'\n")
+            exit(1)
 
-
-    #Activation derivative
+    #Activation derivative (sigmoid)
     @staticmethod
-    def activation_prime(activations):
-        return activations * (1.0 - activations)
+    def activation_prime(activations, choice):
+        if (choice == "sigmoid"):
+            return activations * (1.0 - activations)
+        elif (choice == "softmax"):
+            return activations
+            """
+            a_prime = np.diag(activations)
+            for i in xrange(np.size(activations)):
+                for j in xrange(np.size(activations)):
+                    if i == j:
+                        a_prime[i][j] = activations[i] * (1 - activations[i])
+                    else:
+                        a_prime[i][j] = -activations[i] * activations[j]
+            return a_prime
+            """
+        else:
+            print("incorrect a_prime choice. Choices are 'sigmoid' and softmax'\n")
+            exit(1)
 
 
-    #Cost function
+
+
+
+    #COST FUNCTIONS AND THEIR DERIVATIVES
+    #----------------------------------------------------------------
+    #DIFFERENCE SQUARED
     @staticmethod
-    def cost(out_a, expected):
+    def squared_cost(out_a, expected):
         cost_array = 0.5*(out_a-expected)*(out_a-expected)
         return np.sum(cost_array)
 
 
-    #Cost derivative
+    #CROSS ENTROPY
     @staticmethod
-    def cost_prime(out_a, expected):
-        return out_a - expected
+    def cross_entropy_cost(out_a, expected):
+        cost_array = expected*np.log(out_a) + (1.0-expected)*np.log(1.0-out_a)
+        return np.sum(cost_array)
+     
+
+    #dC/da cost derivative
+    @staticmethod
+    def cost_prime(out_a, expected, choice):
+        if (choice == "cross"):
+            return (out_a - expected) / (out_a * (1.0-out_a))
+            #when using softmax 
+        elif (choice == "squared"):
+            #When using sigmoid activation function
+            return out_a - expected
+        else:
+            print("incorrect cost_prime choice. Choices are 'cross' and 'squared\n")
+            exit(1)
+
