@@ -91,7 +91,7 @@ class Network(object):
 
 
     #Tests neural net's accuracy on new data after each epoch of training
-    def working(self, test_set, func_type):
+    def testing(self, test_set, func_type):
         num_correct = 0
         for data in test_set:
             if (func_type == "squared"):
@@ -104,7 +104,7 @@ class Network(object):
                 num_correct += 1
         print "{}/{} correctly classified by network\n".format(
             num_correct, len(test_set))
-
+        return num_correct
 
 
  
@@ -128,7 +128,42 @@ class Network(object):
                 self.gradient_descent(batch, eta, nabla_w, nabla_b, cost_activation_type)
             if show_progress:
                 print "Epoch {} Training Complete: ".format(i)
-                self.working(test_set, cost_activation_type)
+                self.testing(test_set, cost_activation_type)
+        return self.testing(test_set, cost_activation_type)
+
+
+
+
+    def validating(self, valid_set, test_set):
+        batch_size = [20*x+1 for x in xrange(20)]
+        eta = [math.pow(10, x-5) for x in xrange(10)]
+        epochs = [10*x+1 for x in xrange(5)]
+        best_hyperparams = [-1, -1, -1]
+        best_score = 0
+        best_network = "squared"
+        for i in xrange(30):
+            _batch = batch_size[random.randint(0,19)]
+            _eta = eta[random.randint(0,9)]
+            _epochs = epochs[random.randint(0, 4)]
+            squared_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
+                "squared", show_progress=False)
+            cross_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
+                "cross", show_progress=False)
+
+            max_correct = max(squared_correct, cross_correct)
+            max_label = "squared"
+            if cross_correct >= squared_correct:
+                max_label = "cross"
+            if max_correct > best_score:
+                best_score = max_correct
+                best_network = max_label
+                best_hyperparams[0] = _batch
+                best_hyperparams[1] = _eta
+                best_hyperparams[2] = _epochs
+
+        print "Best batch_size: {}\nBest eta: {}\nBest num epochs: {}\n".format(
+            best_hyperparams[0], best_hyperparams[1], best_hyperparams[2])
+
 
 
     #Determines the weight and bias errors after each backprop iteration of 
@@ -144,8 +179,6 @@ class Network(object):
         else:
             for single in batch:
                 a_s = self.forward_pass(single, "softmax")
-                #delta = self.cost_prime(a_s[-1], single[1], "cross") * \
-                    #self.activation_prime(a_s[-1], "softmax")
                 delta = a_s[-1] - single[1]
                 nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)            
         for i in xrange(self.num_layers-1):
@@ -153,14 +186,20 @@ class Network(object):
             self.biases[i] -= (eta/len(batch))*nabla_b[i]
 
 
+
 #TODO MAKE ONLY OUTPUT ACTIVATION BE SOFTMAX
     #Calculates and returns the activations of all the neurons
     def forward_pass(self, datapair, func_type, get_out_as=False):
         activations = []
         activations.append(datapair[0])
+        i = 1
         for w,b in zip(self.weights, self.biases):
             z = np.dot(w, activations[-1]) + b
-            activations.append(self.squishify(z, func_type))
+            if func_type == "softmax" and i == self.num_layers-1:
+                activations.append(self.squishify(z, "softmax"))
+                break
+            activations.append(self.squishify(z, "sigmoid"))
+            ++i
         if get_out_as:
             return activations[-1]
         return activations
@@ -183,9 +222,9 @@ class Network(object):
     #Activation function, takes in zs of a layer
     @staticmethod
     def squishify(zs, choice):
-        if (choice == "sigmoid"):
+        if choice == "sigmoid":
             return 1.0 / (1.0 + np.exp(-zs))
-        elif (choice == "softmax"):
+        elif choice == "softmax":
             #normalizes softmax so overflow does not occur
             normalize = np.max(zs)
             exps = np.exp(zs - normalize)
@@ -200,8 +239,6 @@ class Network(object):
         if (choice == "sigmoid"):
             return activations * (1.0 - activations)
         elif (choice == "softmax"):
-            return activations
-            """
             a_prime = np.diag(activations)
             for i in xrange(np.size(activations)):
                 for j in xrange(np.size(activations)):
@@ -210,7 +247,6 @@ class Network(object):
                     else:
                         a_prime[i][j] = -activations[i] * activations[j]
             return a_prime
-            """
         else:
             print("incorrect a_prime choice. Choices are 'sigmoid' and softmax'\n")
             exit(1)
