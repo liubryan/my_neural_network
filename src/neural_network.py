@@ -2,15 +2,20 @@
 """USAGE: this neural network is designed to take in the MNIST gzip pickled
 dataset of handwritten numbers from 0 to 9. To run, download this file and the
 MNIST dataset at http://deeplearning.net/tutorial/gettingstarted.html. Edit the
-gzip.open line below to where the dataset is located for you. At the command
-line in Python, type 
+"gzip.open" line of code below to where the dataset is located for you. To train
+the neural network, type 
     "import neural_network as n"
     "train, valid, test = n.init_data()"
     "net = n.Network([784, 30, 10])"
-    "net.training(train, test, 10, 3.0, 20, True)"
-At this point, the network should be training. You can play around with the 
-number of hidden neurons, hidden layers, eta, batch size, and number of training
-epochs if you want.
+    "net.training(train, test, batch_size=10, eta=3.0, epochs=20, 
+        cost_act_type="squared", use_normalized_weights=False, use_l2_lmbda=0,
+        show_progress=True)"
+You can play around with the different hyperparameters as well as choose a
+cost-activation model (either "squared" or "cross")
+
+To simulate an automated hyperparameter random grid search, substitute 
+"net.training(...)" above with "net.validating(valid, test)". This will take
+a fairly long time to run
 """
 
 
@@ -85,7 +90,7 @@ class Network(object):
         self.size = size
         self.num_layers = len(size)
         self.biases = [np.random.randn(y,1) for y in size[1:]]
-        self.weights = [np.random.randn(y,x) / np.sqrt(x)
+        self.weights = [np.random.randn(y,x)
                         for x,y in zip(size[:-1], size[1:])]
 
 
@@ -93,12 +98,19 @@ class Network(object):
 
     #Trains the neural net using backprop. At the end of each epoch 
     #the test data is used to evaluate the network's accuracy
-    def training(self, train_set, test_set, batch_size, eta, epochs, lmbda,
-                cost_act_type, show_progress=True):
+    def training(self, train_set, test_set, batch_size, eta, epochs, cost_act_type, 
+                    use_normalized_weights=False,
+                    use_l2_lmbda=0,
+                    show_progress=True):
+        #Checks to see if user's cost_activation model is valid
         if (cost_act_type != "squared" and cost_act_type != "cross"):
             print("enter valid cost_activation_type 'squared' or 'cross'")
             exit(1)
-        for i in xrange(epochs):     
+        #Checks to see if user specified usage of normalized weights
+        if use_normalized_weights:
+            for x in xrange(len(self.size)-1):
+                self.weights[x] /= math.sqrt(self.size[x])
+        for i in xrange(epochs):
             random.shuffle(train_set)
             #Separates the dataset into batch sizes specified by the user
             batches = [train_set[k:batch_size+k] 
@@ -107,32 +119,39 @@ class Network(object):
                 #nabla_w and nabla_b are reset before each batch 
                 nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
                 nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
-                self.gradient_descent(batch, eta, lmbda, nabla_w, nabla_b, cost_act_type)
+                self.gradient_descent(batch, eta, use_l2_lmbda, nabla_w, nabla_b, 
+                    cost_act_type, len(train_set))
             if show_progress:
                 print "Epoch {} Training Complete: ".format(i)
                 self.testing(test_set, cost_act_type)
-        return self.testing(test_set, cost_activation_type)
+        return self.testing(test_set, cost_act_type)
 
 
 
-
+    #Selects optimal hyperparameters using random grid search
     def validating(self, valid_set, test_set):
         batch_size = [20*x+1 for x in xrange(30)]
-        eta = [0.5*x+1 for x in xrange(20)]
-        epochs = [5*x+1 for x in xrange(5)]
-        lmbda = [0.05*x + 0.01 for x in xrange(20)]
+        eta = [0.25*x+0.1 for x in xrange(40)]
+        epochs = [5*x+1 for x in xrange(15)]
+        lmbda = [0.025*x + 0.01 for x in xrange(50)]
         best_hyperparams = [-1, -1, -1, -1]
         best_score = 0
         best_network = "squared"
         for i in xrange(30):
             _batch = batch_size[random.randint(0,29)]
-            _eta = eta[random.randint(0,19)]
-            _epochs = epochs[random.randint(0, 4)]
-            _lmbda = lmbda[random.randint(0, 19)]
+            _eta = eta[random.randint(0,39)]
+            _epochs = epochs[random.randint(0, 10)]
+            _lmbda = lmbda[random.randint(0, 49)]
             squared_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
-                _lmbda, "squared", show_progress=False)
+                "squared", use_normalized_weights=True, use_l2_lmbda=_lmbda, show_progress=False)
+            self.biases = [np.random.randn(y,1) for y in self.size[1:]]
+            self.weights = [np.random.randn(y,x) / np.sqrt(x)
+                        for x,y in zip(self.size[:-1], self.size[1:])]            
             cross_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
-                _lmbda, "cross", show_progress=False)
+                "cross", use_normalized_weights=True, use_l2_lmbda=_lmbda, show_progress=False)
+            self.biases = [np.random.randn(y,1) for y in self.size[1:]]
+            self.weights = [np.random.randn(y,x) / np.sqrt(x)
+                        for x,y in zip(self.size[:-1], self.size[1:])]  
 
             max_correct = max(squared_correct, cross_correct)
             max_label = "squared"
@@ -154,7 +173,7 @@ class Network(object):
 
 
 
-    #Tests neural net's accuracy on new data after each epoch of training
+    #Tests neural net's accuracy on unseen data after each epoch of training
     def testing(self, test_set, func_type):
         num_correct = 0
         for data in test_set:
@@ -175,8 +194,9 @@ class Network(object):
 
     #Determines the weight and bias errors after each backprop iteration of 
     #a batch. At the end of a batch, the errors are averaged and used to 
-    #calculate the new weights and biases. Uses cross-entropy cost function
-    def gradient_descent(self, batch, eta, lmbda, nabla_w, nabla_b, func_types):
+    #calculate the new weights and biases using L2 weight normalization if
+    #a lambda was specified by the user 
+    def gradient_descent(self, batch, eta, lmbda, nabla_w, nabla_b, func_types, train_size):
         if func_types == "squared":
             for single in batch:
                 a_s = self.forward_pass(single, "sigmoid")
@@ -187,15 +207,17 @@ class Network(object):
             for single in batch:
                 a_s = self.forward_pass(single, "softmax")
                 delta = a_s[-1] - single[1]
-                nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)            
+                nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)        
         for i in xrange(self.num_layers-1):
-            self.weights[i] -= (eta/len(batch))*nabla_w[i] + (eta/50000)*lmbda*self.weights[i]
+            self.weights[i] -= ((eta/len(batch))*nabla_w[i] + lmbda*(eta/train_size)*self.weights[i])
             self.biases[i] -= (eta/len(batch))*nabla_b[i]
 
 
 
-#TODO MAKE ONLY OUTPUT ACTIVATION BE SOFTMAX
-    #Calculates and returns the activations of all the neurons
+
+    #Calculates and returns the activations of all hidden neurons using the sigmoid
+    #activation function. If user specified "cross" cost_activation model, the output
+    #layer will use the softmax function
     def forward_pass(self, datapair, func_type, get_out_as=False):
         activations = []
         activations.append(datapair[0])
@@ -213,6 +235,8 @@ class Network(object):
 
 
 
+
+
     #Backpropagates the error from the last layer to calculate and update nabla_w and
     #nabla_b for layers 2 to N
     def backprop(self, delta, a_s, nabla_w, nabla_b):
@@ -225,8 +249,8 @@ class Network(object):
         return nabla_w, nabla_b
 
 
-
-    #Activation function, takes in zs of a layer
+    #Activation function, takes in zs of a layer and returns either sigmoid or 
+    #softmax activations
     @staticmethod
     def squishify(zs, choice):
         if choice == "sigmoid":
@@ -240,7 +264,8 @@ class Network(object):
             print("incorrect squishify choice. Choices are 'sigmoid' and 'softmax'\n")
             exit(1)
 
-    #Activation derivative (sigmoid)
+
+    #Activation derivatives of a layer for sigmoid or softmax functions
     @staticmethod
     def activation_prime(activations, choice):
         if (choice == "sigmoid"):
@@ -261,24 +286,21 @@ class Network(object):
 
 
 
-
-    #COST FUNCTIONS AND THEIR DERIVATIVES
-    #----------------------------------------------------------------
-    #DIFFERENCE SQUARED
+    #Computes difference squared cost function
     @staticmethod
     def squared_cost(out_a, expected):
         cost_array = 0.5*(out_a-expected)*(out_a-expected)
         return np.sum(cost_array)
 
 
-    #CROSS ENTROPY
+    #Computes cross entropy cost function
     @staticmethod
     def cross_entropy_cost(out_a, expected):
         cost_array = expected*np.log(out_a) + (1.0-expected)*np.log(1.0-out_a)
         return np.sum(cost_array)
      
 
-    #dC/da cost derivative
+    #Computes cost derivative of cross-entropy or difference squared model
     @staticmethod
     def cost_prime(out_a, expected, choice):
         if (choice == "cross"):
