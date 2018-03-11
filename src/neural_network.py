@@ -89,6 +89,70 @@ class Network(object):
                         for x,y in zip(size[:-1], size[1:])]
 
 
+ 
+
+    #Trains the neural net using backprop. At the end of each epoch 
+    #the test data is used to evaluate the network's accuracy
+    def training(self, train_set, test_set, batch_size, eta, epochs, lmbda,
+                cost_act_type, show_progress=True):
+        if (cost_act_type != "squared" and cost_act_type != "cross"):
+            print("enter valid cost_activation_type 'squared' or 'cross'")
+            exit(1)
+        for i in xrange(epochs):     
+            random.shuffle(train_set)
+            #Separates the dataset into batch sizes specified by the user
+            batches = [train_set[k:batch_size+k] 
+                    for k in xrange(0,len(train_set),batch_size)]
+            for batch in batches:
+                #nabla_w and nabla_b are reset before each batch 
+                nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
+                nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
+                self.gradient_descent(batch, eta, lmbda, nabla_w, nabla_b, cost_act_type)
+            if show_progress:
+                print "Epoch {} Training Complete: ".format(i)
+                self.testing(test_set, cost_act_type)
+        return self.testing(test_set, cost_activation_type)
+
+
+
+
+    def validating(self, valid_set, test_set):
+        batch_size = [20*x+1 for x in xrange(30)]
+        eta = [0.5*x+1 for x in xrange(20)]
+        epochs = [5*x+1 for x in xrange(5)]
+        lmbda = [0.05*x + 0.01 for x in xrange(20)]
+        best_hyperparams = [-1, -1, -1, -1]
+        best_score = 0
+        best_network = "squared"
+        for i in xrange(30):
+            _batch = batch_size[random.randint(0,29)]
+            _eta = eta[random.randint(0,19)]
+            _epochs = epochs[random.randint(0, 4)]
+            _lmbda = lmbda[random.randint(0, 19)]
+            squared_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
+                _lmbda, "squared", show_progress=False)
+            cross_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
+                _lmbda, "cross", show_progress=False)
+
+            max_correct = max(squared_correct, cross_correct)
+            max_label = "squared"
+            if cross_correct >= squared_correct:
+                max_label = "cross"
+            if max_correct > best_score:
+                best_score = max_correct
+                best_network = max_label
+                best_hyperparams[0] = _batch
+                best_hyperparams[1] = _eta
+                best_hyperparams[2] = _epochs
+                best_hyperparams[3] = _lmbda
+
+        print "Used {} cost function and correctly classified {}/{}: \
+            Best batch_size: {}, Best eta: {}, Best num epochs: {}, Best lambda: {}".format(
+            best_network, best_score, len(test_set), best_hyperparams[0], 
+            best_hyperparams[1], best_hyperparams[2], best_hyperparams[3])
+
+
+
 
     #Tests neural net's accuracy on new data after each epoch of training
     def testing(self, test_set, func_type):
@@ -107,69 +171,12 @@ class Network(object):
         return num_correct
 
 
- 
-
-    #Trains the neural net using backprop. At the end of each epoch 
-    #the test data is used to evaluate the network's accuracy
-    def training(self, train_set, test_set, batch_size, eta, epochs, 
-                cost_activation_type, show_progress=True):
-        if (cost_activation_type != "squared" and cost_activation_type != "cross"):
-            print("enter valid cost_activation_type 'squared' or 'cross'")
-            exit(1)
-        for i in xrange(epochs):     
-            random.shuffle(train_set)
-            #Separates the dataset into batch sizes specified by the user
-            batches = [train_set[k:batch_size+k] 
-                    for k in xrange(0,len(train_set),batch_size)]
-            for batch in batches:
-                #nabla_w and nabla_b are reset before each batch 
-                nabla_w = [np.zeros(np.shape(x)) for x in self.weights]
-                nabla_b = [np.zeros(np.shape(y)) for y in self.biases]               
-                self.gradient_descent(batch, eta, nabla_w, nabla_b, cost_activation_type)
-            if show_progress:
-                print "Epoch {} Training Complete: ".format(i)
-                self.testing(test_set, cost_activation_type)
-        return self.testing(test_set, cost_activation_type)
-
-
-
-
-    def validating(self, valid_set, test_set):
-        batch_size = [20*x+1 for x in xrange(20)]
-        eta = [math.pow(10, x-5) for x in xrange(10)]
-        epochs = [10*x+1 for x in xrange(5)]
-        best_hyperparams = [-1, -1, -1]
-        best_score = 0
-        best_network = "squared"
-        for i in xrange(30):
-            _batch = batch_size[random.randint(0,19)]
-            _eta = eta[random.randint(0,9)]
-            _epochs = epochs[random.randint(0, 4)]
-            squared_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
-                "squared", show_progress=False)
-            cross_correct = self.training(valid_set, test_set, _batch, _eta, _epochs, 
-                "cross", show_progress=False)
-
-            max_correct = max(squared_correct, cross_correct)
-            max_label = "squared"
-            if cross_correct >= squared_correct:
-                max_label = "cross"
-            if max_correct > best_score:
-                best_score = max_correct
-                best_network = max_label
-                best_hyperparams[0] = _batch
-                best_hyperparams[1] = _eta
-                best_hyperparams[2] = _epochs
-
-        print "Best batch_size: {}\nBest eta: {}\nBest num epochs: {}\n".format(
-            best_hyperparams[0], best_hyperparams[1], best_hyperparams[2])
-
 
 
     #Determines the weight and bias errors after each backprop iteration of 
     #a batch. At the end of a batch, the errors are averaged and used to 
     #calculate the new weights and biases. Uses cross-entropy cost function
-    def gradient_descent(self, batch, eta, nabla_w, nabla_b, func_types):
+    def gradient_descent(self, batch, eta, lmbda, nabla_w, nabla_b, func_types):
         if func_types == "squared":
             for single in batch:
                 a_s = self.forward_pass(single, "sigmoid")
@@ -182,7 +189,7 @@ class Network(object):
                 delta = a_s[-1] - single[1]
                 nabla_w, nabla_b = self.backprop(delta, a_s, nabla_w, nabla_b)            
         for i in xrange(self.num_layers-1):
-            self.weights[i] -= (eta/len(batch))*nabla_w[i]
+            self.weights[i] -= (eta/len(batch))*nabla_w[i] + (eta/50000)*lmbda*self.weights[i]
             self.biases[i] -= (eta/len(batch))*nabla_b[i]
 
 
